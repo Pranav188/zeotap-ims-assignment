@@ -94,6 +94,16 @@ section {
   margin-bottom: 16px;
 }
 
+.form-message {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  background: #ffe4e0;
+  border: 1px solid #ef9a8f;
+  border-radius: 6px;
+  color: #8f2415;
+  font-weight: 700;
+}
+
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 label { display: grid; gap: 6px; font-size: 13px; color: #435064; }
 input, select, textarea { width: 100%; padding: 9px; background: white; color: #18212f; }

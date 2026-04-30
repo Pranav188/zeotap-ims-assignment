@@ -47,6 +47,7 @@ async function loadDetail(id) {
       <div class="meta"><span>First: ${incident.firstSignalAt}</span><span>Last: ${incident.lastSignalAt}</span></div>
     </div>
     <form id="stateForm" class="panel">
+      <div id="formMessage" class="form-message" hidden></div>
       <div class="grid">
         <label>Status
           <select name="state">
@@ -86,21 +87,28 @@ async function submitState(event) {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(event.target));
   const needsRca = data.state === 'CLOSED';
-  await json(`/api/incidents/${selectedId}/state`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      state: data.state,
-      rca: needsRca ? {
-        startTime: new Date(data.startTime).toISOString(),
-        endTime: new Date(data.endTime || Date.now()).toISOString(),
-        rootCauseCategory: data.rootCauseCategory,
-        fixApplied: data.fixApplied,
-        preventionSteps: data.preventionSteps
-      } : null
-    })
-  });
-  await loadIncidents();
-  await loadDetail(selectedId);
+  const message = document.querySelector('#formMessage');
+  message.hidden = true;
+  try {
+    await json(`/api/incidents/${selectedId}/state`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        state: data.state,
+        rca: needsRca ? {
+          startTime: new Date(data.startTime).toISOString(),
+          endTime: data.endTime ? new Date(data.endTime).toISOString() : '',
+          rootCauseCategory: data.rootCauseCategory,
+          fixApplied: data.fixApplied,
+          preventionSteps: data.preventionSteps
+        } : null
+      })
+    });
+    await loadIncidents();
+    await loadDetail(selectedId);
+  } catch (error) {
+    message.textContent = error.message;
+    message.hidden = false;
+  }
 }
 
 document.querySelector('#simulate').addEventListener('click', async () => {
