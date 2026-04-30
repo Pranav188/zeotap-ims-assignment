@@ -1,0 +1,14 @@
+{
+  "name": "zeotap-ims-backend",
+  "version": "1.0.0",
+  "description": "Mission-critical Incident Management System backend for Zeotap SRE assignment.",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

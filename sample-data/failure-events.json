@@ -1,0 +1,25 @@
+[
+  {
+    "componentId": "RDBMS_PRIMARY_01",
+    "componentType": "RDBMS",
+    "message": "primary database commit latency breached SLO",
+    "errorCode": "DB_LATENCY_HIGH",
+    "latencyMs": 1800,
+    "payload": { "region": "ap-south-1", "query": "orders.write" }
+  },
+  {
+    "componentId": "MCP_HOST_02",
+    "componentType": "MCP_HOST",
+    "message": "MCP host stopped returning heartbeats",
+    "errorCode": "MCP_HEARTBEAT_MISSED",
+    "payload": { "host": "mcp-02", "zone": "ap-south-1b" }
+  },
+  {
+    "componentId": "CACHE_CLUSTER_01",
+    "componentType": "CACHE",
+    "message": "cache p99 latency spike",
+    "errorCode": "CACHE_P99_SPIKE",
+    "latencyMs": 640,
+    "payload": { "cluster": "redis-hot-path", "shard": "3" }
+  }
+]

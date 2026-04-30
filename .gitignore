@@ -1,0 +1,6 @@
+data/*.json
+data/*.jsonl
+node_modules/
+.DS_Store
+output/
+tmp/
