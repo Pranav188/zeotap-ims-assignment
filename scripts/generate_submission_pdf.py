@@ -23,10 +23,11 @@ def main():
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name="Small", parent=styles["BodyText"], fontSize=9, leading=12))
     styles.add(ParagraphStyle(name="CodeBlock", parent=styles["BodyText"], fontName="Courier", fontSize=8, leading=10))
+    styles.add(ParagraphStyle(name="CenteredHeading1", parent=styles["Heading1"], alignment=1))
     story = []
 
     story.append(Paragraph("Infrastructure / SRE Intern Assignment", styles["Title"]))
-    story.append(Paragraph("Mission-Critical Incident Management System", styles["Heading1"]))
+    story.append(Paragraph("Mission-Critical Incident Management System", styles["CenteredHeading1"]))
     story.append(p(f"Candidate: {FULL_NAME}", styles["BodyText"]))
     story.append(p(f"GitHub Repository: {GITHUB_URL}", styles["BodyText"]))
     story.append(Spacer(1, 0.25 * inch))
