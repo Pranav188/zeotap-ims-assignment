@@ -3,7 +3,6 @@ import { resolveAlert } from './alertStrategies.js';
 import { Signal, WorkItem, SeverityRank, IncidentState } from './models.js';
 import { assertTransition, calculateMttrSeconds } from './stateMachine.js';
 
-const DEBOUNCE_WINDOW_MS = 10_000;
 const QUEUE_LIMIT = 50_000;
 
 export class IncidentEngine extends EventEmitter {
@@ -16,12 +15,18 @@ export class IncidentEngine extends EventEmitter {
     this.activeByComponent = new Map();
     this.aggregations = {};
     this.metrics = { accepted: 0, rejected: 0, processed: 0, lastProcessed: 0 };
+    this.lock = Promise.resolve();
   }
 
   async init() {
     this.workItems = await this.stores.loadWorkItems();
     for (const item of this.workItems.values()) {
-      if (item.state !== IncidentState.CLOSED) this.activeByComponent.set(item.componentId, item.id);
+      if (item.state === IncidentState.CLOSED) continue;
+      const currentId = this.activeByComponent.get(item.componentId);
+      const current = currentId ? this.workItems.get(currentId) : null;
+      if (!current || Date.parse(item.updatedAt) > Date.parse(current.updatedAt)) {
+        this.activeByComponent.set(item.componentId, item.id);
+      }
     }
   }
 
@@ -41,29 +46,43 @@ export class IncidentEngine extends EventEmitter {
   async drain() {
     if (this.processing) return;
     this.processing = true;
-    while (this.queue.length > 0) {
-      const signal = this.queue.shift();
-      await this.process(signal);
+    try {
+      while (this.queue.length > 0) {
+        const signal = this.queue.shift();
+        try {
+          await this.process(signal);
+        } catch (error) {
+          this.metrics.rejected += 1;
+          console.error(`[processor] failed signal=${signal.id}: ${error.message}`);
+        }
+      }
+    } finally {
+      this.processing = false;
+      if (this.queue.length > 0) void this.drain();
     }
-    this.processing = false;
   }
 
   async process(signal) {
     await this.stores.appendRawSignal(signal);
-    const workItem = this.findOrCreateWorkItem(signal);
-    workItem.signalIds.push(signal.id);
-    workItem.lastSignalAt = signal.observedAt;
-    workItem.updatedAt = new Date().toISOString();
-    this.bumpAggregation(signal);
-    await this.persistHotPath();
-    this.metrics.processed += 1;
-    this.emit('processed', workItem);
+    return this.withLock(async () => {
+      const workItem = this.findOrCreateWorkItem(signal);
+      workItem.signalIds.push(signal.id);
+      workItem.lastSignalAt = signal.observedAt;
+      workItem.updatedAt = new Date().toISOString();
+      this.bumpAggregation(signal);
+      await this.persistHotPath();
+      this.metrics.processed += 1;
+      this.emit('processed', workItem);
+      return workItem;
+    });
   }
 
   findOrCreateWorkItem(signal) {
     const existingId = this.activeByComponent.get(signal.componentId);
     const existing = existingId ? this.workItems.get(existingId) : null;
-    if (existing && Date.parse(signal.observedAt) - Date.parse(existing.firstSignalAt) <= DEBOUNCE_WINDOW_MS) {
+    if (existing && existing.state !== IncidentState.CLOSED) {
+      // Covers the required 10-second debounce window and keeps a longer outage
+      // attached to the same active incident until RCA closure.
       return existing;
     }
 
@@ -82,22 +101,24 @@ export class IncidentEngine extends EventEmitter {
   }
 
   async updateState(id, nextState, rca) {
-    const workItem = this.workItems.get(id);
-    if (!workItem) throw new Error('work item not found');
-    assertTransition(workItem, nextState, rca);
-    if (rca) {
-      workItem.rca = rca;
-      workItem.mttrSeconds = calculateMttrSeconds(workItem.firstSignalAt, rca.endTime);
-    }
-    workItem.state = nextState;
-    workItem.updatedAt = new Date().toISOString();
-    if (nextState === IncidentState.CLOSED) this.activeByComponent.delete(workItem.componentId);
-    await this.persistHotPath();
-    return workItem;
+    return this.withLock(async () => {
+      const workItem = this.workItems.get(id);
+      if (!workItem) throw new Error('work item not found');
+      assertTransition(workItem, nextState, rca);
+      if (rca) {
+        workItem.rca = rca;
+        workItem.mttrSeconds = calculateMttrSeconds(workItem.firstSignalAt, rca.endTime);
+      }
+      workItem.state = nextState;
+      workItem.updatedAt = new Date().toISOString();
+      if (nextState === IncidentState.CLOSED) this.activeByComponent.delete(workItem.componentId);
+      await this.persistHotPath();
+      return workItem;
+    });
   }
 
-  listIncidents() {
-    return [...this.workItems.values()].sort((a, b) => {
+  listIncidents({ includeClosed = false } = {}) {
+    return [...this.workItems.values()].filter(item => includeClosed || item.state !== IncidentState.CLOSED).sort((a, b) => {
       const severity = SeverityRank[a.severity] - SeverityRank[b.severity];
       return severity || Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
     });
@@ -110,7 +131,7 @@ export class IncidentEngine extends EventEmitter {
   async getSignals(id) {
     const workItem = this.workItems.get(id);
     if (!workItem) throw new Error('work item not found');
-    return this.stores.querySignals(workItem.componentId);
+    return this.stores.querySignalsByIds(workItem.signalIds);
   }
 
   bumpAggregation(signal) {
@@ -129,5 +150,11 @@ export class IncidentEngine extends EventEmitter {
     const delta = this.metrics.processed - this.metrics.lastProcessed;
     this.metrics.lastProcessed = this.metrics.processed;
     return { ...this.metrics, signalsPerSecond: delta / 5, queueDepth: this.queue.length };
+  }
+
+  async withLock(operation) {
+    const run = this.lock.then(operation, operation);
+    this.lock = run.catch(() => {});
+    return run;
   }
 }

@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { extname, join, resolve } from 'node:path';
+import { extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { IncidentEngine } from './incidentEngine.js';
 import { JsonStores } from './storage.js';
@@ -30,13 +30,17 @@ function sendJson(res, status, body) {
 async function readJson(req) {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
-  return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+  } catch {
+    throw new Error('invalid JSON body');
+  }
 }
 
 async function serveStatic(req, res) {
   const path = req.url === '/' ? '/index.html' : req.url;
-  const filePath = join(frontendDir, decodeURIComponent(path.split('?')[0]));
-  if (!filePath.startsWith(frontendDir)) return sendJson(res, 403, { error: 'forbidden' });
+  const filePath = resolve(frontendDir, `.${decodeURIComponent(path.split('?')[0])}`);
+  if (filePath !== frontendDir && !filePath.startsWith(`${frontendDir}${sep}`)) return sendJson(res, 403, { error: 'forbidden' });
   try {
     const content = await readFile(filePath);
     const types = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript' };
@@ -70,9 +74,16 @@ const server = createServer(async (req, res) => {
     }
     return serveStatic(req, res);
   } catch (error) {
-    const status = ['required', 'invalid', 'complete RCA', 'after incident start'].some(text => error.message.includes(text)) ? 400 : 500;
-    sendJson(res, status, { error: error.message });
+    sendJson(res, statusForError(error), { error: error.message });
   }
 });
 
 server.listen(port, () => console.log(`IMS listening on http://localhost:${port}`));
+
+function statusForError(error) {
+  const message = error.message || '';
+  if (message.includes('not found')) return 404;
+  if (message.includes('backpressure')) return 503;
+  if (['required', 'invalid', 'complete RCA', 'after incident start', 'after RCA startTime', 'valid date'].some(text => message.includes(text))) return 400;
+  return 500;
+}

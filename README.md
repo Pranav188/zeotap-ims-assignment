@@ -60,7 +60,7 @@ The UI also has a `Simulate outage` button that sends RDBMS, MCP host, and cache
 
 - `GET /health` returns service health and uptime.
 - `POST /api/signals` ingests a signal asynchronously.
-- `GET /api/incidents` lists incidents sorted by severity.
+- `GET /api/incidents` lists active incidents sorted by severity.
 - `GET /api/incidents/:id` returns one work item.
 - `GET /api/incidents/:id/signals` returns raw linked signals from the audit store.
 - `PATCH /api/incidents/:id/state` transitions state and enforces RCA rules.
@@ -72,7 +72,7 @@ The ingestion API uses two layers:
 1. A token-bucket rate limiter allows bursts while capping steady-state ingestion at 10,000 signals per second.
 2. An in-memory queue has a hard limit of 50,000 signals. If persistence slows down and the queue fills, the API returns an explicit backpressure error instead of crashing.
 
-The processor drains asynchronously, writes raw signals with retry logic, and only creates one work item for repeated signals from the same component within 10 seconds.
+The processor drains asynchronously, writes raw signals with retry logic, creates one work item for repeated signals from the same component within the 10-second debounce window, and keeps later signals attached to the same active incident until RCA closure.
 
 ## Resilience and Security
 
@@ -80,6 +80,7 @@ The processor drains asynchronously, writes raw signals with retry logic, and on
 - Store writes use bounded retries with small backoff.
 - State transitions are validated centrally to prevent illegal lifecycle jumps.
 - Closing an incident is rejected unless RCA is complete.
+- UI-rendered incident and signal content is escaped before insertion into the page.
 - `/health` supports container and load balancer health checks.
 - Console throughput metrics print every 5 seconds.
 - Inputs are validated for required component fields.
@@ -91,7 +92,7 @@ cd zeotap-ims-assignment/backend
 npm test
 ```
 
-Covered: RCA completeness validation, mandatory RCA close guard, and MTTR calculation.
+Covered: RCA completeness validation, mandatory RCA close guard, strict workflow transitions, MTTR calculation, repeated-signal linking, and new incident creation after closure.
 
 ## Assignment Notes
 

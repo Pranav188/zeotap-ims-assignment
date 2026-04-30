@@ -1,5 +1,31 @@
 let selectedId = null;
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function stateOptions(currentState) {
+  const transitions = {
+    OPEN: ['INVESTIGATING'],
+    INVESTIGATING: ['RESOLVED'],
+    RESOLVED: ['CLOSED', 'INVESTIGATING'],
+    CLOSED: []
+  };
+  const options = transitions[currentState] || [];
+  return options.length
+    ? options.map(state => `<option>${state}</option>`).join('')
+    : `<option>${escapeHtml(currentState)}</option>`;
+}
+
+function datetimeLocalValue(iso) {
+  return iso ? iso.slice(0, 16) : '';
+}
+
 async function json(url, options = {}) {
   const response = await fetch(url, {
     headers: { 'content-type': 'application/json' },
@@ -12,12 +38,12 @@ async function json(url, options = {}) {
 
 function incidentButton(item) {
   const severityClass = item.severity.toLowerCase();
-  return `<button class="incident" data-id="${item.id}">
-    <strong>${item.componentId}</strong>
-    <span>${item.componentType} via ${item.alertChannel}</span>
+  return `<button class="incident" data-id="${escapeHtml(item.id)}">
+    <strong>${escapeHtml(item.componentId)}</strong>
+    <span>${escapeHtml(item.componentType)} via ${escapeHtml(item.alertChannel)}</span>
     <span class="meta">
-      <span class="pill ${severityClass}">${item.severity}</span>
-      <span class="pill">${item.state}</span>
+      <span class="pill ${severityClass}">${escapeHtml(item.severity)}</span>
+      <span class="pill">${escapeHtml(item.state)}</span>
       <span>${item.signalIds.length} signals</span>
     </span>
   </button>`;
@@ -40,45 +66,38 @@ async function loadDetail(id) {
     json(`/api/incidents/${id}/signals`)
   ]);
   document.querySelector('#selected').textContent = incident.componentId;
+  const rca = incident.rca || {};
   document.querySelector('#detailBody').innerHTML = `
     <div class="panel">
-      <h2>${incident.componentId}</h2>
-      <p>${incident.severity} ${incident.state} - MTTR: ${incident.mttrSeconds ?? 'pending'} seconds</p>
-      <div class="meta"><span>First: ${incident.firstSignalAt}</span><span>Last: ${incident.lastSignalAt}</span></div>
+      <h2>${escapeHtml(incident.componentId)}</h2>
+      <p>${escapeHtml(incident.severity)} ${escapeHtml(incident.state)} - MTTR: ${escapeHtml(incident.mttrSeconds ?? 'pending')} seconds</p>
+      <div class="meta"><span>First: ${escapeHtml(incident.firstSignalAt)}</span><span>Last: ${escapeHtml(incident.lastSignalAt)}</span></div>
     </div>
     <form id="stateForm" class="panel">
       <div id="formMessage" class="form-message" hidden></div>
       <div class="grid">
         <label>Status
-          <select name="state">
-            <option>INVESTIGATING</option>
-            <option>RESOLVED</option>
-            <option>CLOSED</option>
-          </select>
+          <select name="state" ${incident.state === 'CLOSED' ? 'disabled' : ''}>${stateOptions(incident.state)}</select>
         </label>
         <label>Root cause category
           <select name="rootCauseCategory">
-            <option>Database</option>
-            <option>Cache</option>
-            <option>Queue</option>
-            <option>Application</option>
-            <option>Network</option>
+            ${['Database', 'Cache', 'Queue', 'Application', 'Network'].map(category => `<option ${rca.rootCauseCategory === category ? 'selected' : ''}>${category}</option>`).join('')}
           </select>
         </label>
         <label>Incident start
-          <input name="startTime" type="datetime-local" value="${incident.firstSignalAt.slice(0, 16)}">
+          <input name="startTime" type="datetime-local" value="${datetimeLocalValue(rca.startTime || incident.firstSignalAt)}">
         </label>
         <label>Incident end
-          <input name="endTime" type="datetime-local">
+          <input name="endTime" type="datetime-local" value="${datetimeLocalValue(rca.endTime)}">
         </label>
       </div>
-      <label>Fix applied<textarea name="fixApplied"></textarea></label>
-      <label>Prevention steps<textarea name="preventionSteps"></textarea></label>
-      <button type="submit">Update incident</button>
+      <label>Fix applied<textarea name="fixApplied">${escapeHtml(rca.fixApplied || '')}</textarea></label>
+      <label>Prevention steps<textarea name="preventionSteps">${escapeHtml(rca.preventionSteps || '')}</textarea></label>
+      <button type="submit" ${incident.state === 'CLOSED' ? 'disabled' : ''}>Update incident</button>
     </form>
     <div class="panel">
       <h2>Raw signals</h2>
-      <pre>${JSON.stringify(signals, null, 2)}</pre>
+      <pre>${escapeHtml(JSON.stringify(signals, null, 2))}</pre>
     </div>`;
   document.querySelector('#stateForm').addEventListener('submit', submitState);
 }

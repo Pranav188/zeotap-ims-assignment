@@ -62,14 +62,15 @@ export class JsonStores {
     await retry(() => writeFile(this.aggregationsPath, JSON.stringify(aggregations, null, 2)));
   }
 
-  async querySignals(componentId) {
+  async querySignalsByIds(signalIds) {
+    const wanted = new Set(signalIds);
     try {
       const content = await readFile(this.rawSignalsPath, 'utf8');
       return content
         .split('\n')
         .filter(Boolean)
         .map(line => JSON.parse(line))
-        .filter(signal => signal.componentId === componentId);
+        .filter(signal => wanted.has(signal.id));
     } catch {
       return [];
     }
